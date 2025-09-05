@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FaArrowRight } from "react-icons/fa";
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -45,25 +45,59 @@ type record = {
 
 const dashboard = () => {  
   const [records, setRecords] = useState([])
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    form.handleSubmit(handleSearch)();
+  }, []);
+
   const formSchema = z.object({
-    paymentId: z.string().max(36),
-    startDate: z.string(),
-    endDate: z.string(),
+    paymentId: z.string()
+                .max(36, { message: "paymentIdは36文字以下である必要があります" })
+                .regex(
+                  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/i,
+                  { message: "値を入れる場合はUUID形式で入力してください" }
+                )
+                .optional()
+                .or(z.literal("")),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
     status: z.string(),
-  })
+  }).superRefine((data, ctx) => {
+  const { startDate, endDate } = data;
+  const isEmpty = (val?: string) => !val || val.trim() === "";
+  const isValidDate = (val: string) => /^\d{4}-\d{2}-\d{2}$/.test(val);
+
+  const bothEmpty = isEmpty(startDate) && isEmpty(endDate);
+  const bothValid = startDate && endDate && isValidDate(startDate) && isValidDate(endDate);
+
+  if (!bothEmpty && !bothValid) {
+    ctx.addIssue({
+      path: ["startDate"],
+      message: "startDateとendDateは両方とも空、または両方ともYYYY-MM-DD形式である必要があります",
+      code: "custom",
+    });
+    ctx.addIssue({
+      path: ["endDate"],
+      message: "startDateとendDateは両方とも空、または両方ともYYYY-MM-DD形式である必要があります",
+      code: "custom",
+    });
+  }
+});
 
   const today = new Date().toISOString().split('T')[0]
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      paymentId: "",
+      paymentId: '',
       startDate: today,
       endDate: today,
-      status: "",
+      status: '',
     },
   })
 
   const handleSearch = async (values: z.infer<typeof formSchema>) => {
+    setIsLoading(true)
     try {
       const jsonBody = JSON.stringify(
         Object.entries(values).reduce((acc, [key, value]) => {
@@ -91,6 +125,8 @@ const dashboard = () => {
       setRecords(filteredRecords)
     } catch (err) {
       console.error('検索失敗:', err)
+    } finally {
+      setIsLoading(false)
     }
   }
   const maskMiddleCardNum = (cardNumber: string) => {
@@ -103,7 +139,7 @@ const dashboard = () => {
 
   return (
     <div className="h-screen flex flex-col">
-      <div className="h-1/3 w-full bg-white overflow-auto px-12 mt-6">
+      <div className="h-2/5 w-full bg-white overflow-auto px-12 mt-6">
         <Card>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleSearch)} className="space-y-4 ml-6">
@@ -137,6 +173,7 @@ const dashboard = () => {
                         <FormControl>
                           <Input type="date" {...field} className="w-[125px]" />
                         </FormControl>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />
@@ -150,8 +187,9 @@ const dashboard = () => {
                         <FormControl>
                           <Input type="date" {...field} className="w-[125px]" />
                         </FormControl>
+                        <FormMessage />
                       </FormItem>
-                    )}
+                    )}  
                   />
                   <FormField
                     control={form.control}
@@ -178,7 +216,12 @@ const dashboard = () => {
           </Form>
         </Card>
       </div>
-      <div className="h-2/3 px-12">
+      <div className="h-3/5 px-12 pt-5">
+      {isLoading ? (
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-gray-500" />
+        </div>
+      ) : (
         <Table>
           <TableCaption>A list of your recent payments.</TableCaption>
           <TableHeader className="bg-slate-100">
@@ -213,6 +256,7 @@ const dashboard = () => {
           </TableBody>
           <TableFooter></TableFooter>
         </Table>
+      )}
       </div>
     </div>
   )
